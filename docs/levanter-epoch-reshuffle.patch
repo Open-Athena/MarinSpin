@@ -1,0 +1,159 @@
+diff --git a/lib/levanter/src/levanter/data/dataset.py b/lib/levanter/src/levanter/data/dataset.py
+index 031305b55..0a1fb210a 100644
+--- a/lib/levanter/src/levanter/data/dataset.py
++++ b/lib/levanter/src/levanter/data/dataset.py
+@@ -102,6 +102,10 @@ class AsyncDataset(DatasetBase[T_co]):
+     def shuffle(self, key: PRNGKeyArray, *, perm_type: PermType = "feistel"):
+         return PermutationDataset(self, key, perm_type=perm_type)
+ 
++    def reshuffle_each_epoch(self, key: PRNGKeyArray, *, perm_type: PermType = "feistel"):
++        """Infinite view that reshuffles the dataset with a fresh permutation every epoch."""
++        return EpochReshufflingDataset(self, key, perm_type=perm_type)
++
+     def block_shuffle(
+         self,
+         *,
+@@ -486,6 +490,63 @@ class PermutationDataset(AsyncDataset[T_co]):
+         return self._permutation
+ 
+ 
++class EpochReshufflingDataset(AsyncDataset[T_co]):
++    """Infinite dataset that reshuffles the base dataset independently on every epoch.
++
++    For a global index ``i`` over a base of length ``N``: ``epoch = i // N``, ``pos = i % N``, and the
++    item is ``base[Permutation(N, fold_in(key, epoch))(pos)]`` — i.e. each pass over the data uses a
++    fresh permutation seeded by the epoch number. This is the per-epoch reshuffling that a single
++    [PermutationDataset][] (recycled by [MixtureDataset][]'s modulo) does *not* provide, and it
++    matches PyTorch's ``DataLoader(shuffle=True)`` behaviour.
++
++    The dataset is infinite, so when used as a mixture component its indices are passed through
++    un-wrapped (``MixtureDataset`` only applies modulo recycling to *finite* components).
++    """
++
++    def __init__(self, dataset: AsyncDataset[T_co], key: PRNGKeyArray, perm_type: PermType = "feistel"):
++        super().__init__()
++        self.dataset = dataset
++        self.key = _key_on_local_cpu(key)
++        self._perm_type = perm_type
++        self._perms: dict[int, Permutation] = {}
++
++    def is_finite(self) -> bool:
++        return False
++
++    async def async_len(self) -> int:
++        raise ValueError("EpochReshufflingDataset is infinite; async_len is undefined.")
++
++    async def final_length_is_known(self) -> bool:
++        return False
++
++    async def current_len(self) -> Optional[int]:
++        return None
++
++    async def wait_until_len_at_least(self, length: int) -> int:
++        # Infinite: any requested position is reachable once the base has at least one full epoch.
++        await self.dataset.wait_until_len_at_least(await self.dataset.async_len())
++        return length
++
++    async def _perm_for_epoch(self, epoch: int) -> Permutation:
++        if epoch not in self._perms:
++            n = await self.dataset.async_len()
++            self._perms[epoch] = Permutation.make(self._perm_type, n, _fold_in_on_local_cpu(self.key, epoch))
++        return self._perms[epoch]
++
++    async def _map_index(self, index: int) -> int:
++        n = await self.dataset.async_len()
++        epoch, pos = divmod(int(index), n)
++        perm = await self._perm_for_epoch(epoch)
++        return int(perm(pos))
++
++    async def getitem_async(self, index: int) -> T_co:
++        return await self.dataset.getitem_async(await self._map_index(index))
++
++    async def get_batch(self, indices: Sequence[int]) -> Sequence[T_co]:
++        mapped = [await self._map_index(i) for i in indices]
++        return await self.dataset.get_batch(mapped)
++
++
+ @dataclass(frozen=True)
+ class _BlockShuffleState:
+     dataset_len: int
+diff --git a/lib/levanter/src/levanter/data/text/datasets.py b/lib/levanter/src/levanter/data/text/datasets.py
+index f4ab8b929..86e6f15bc 100644
+--- a/lib/levanter/src/levanter/data/text/datasets.py
++++ b/lib/levanter/src/levanter/data/text/datasets.py
+@@ -624,6 +624,12 @@ class LmDataConfig:
+     Type of permutation to use for full shuffle.
+     """
+ 
++    epoch_reshuffle: bool = False
++    """If True, reshuffle the training data with a fresh permutation every epoch (matching
++    PyTorch's ``DataLoader(shuffle=True)``), instead of recycling a single shuffle. Useful for
++    multi-epoch training over finite data; requires ``shuffle`` to be enabled.
++    """
++
+     block_cross_document_attention: bool = True
+     """Whether to block attention across document boundaries.
+ 
+@@ -774,6 +780,10 @@ class LmDataConfig:
+         perm_type = self.permutation_type
+ 
+         def shuffle_ds(ds, k):
++            if self.epoch_reshuffle:
++                # Fresh full permutation every epoch (matches PyTorch DataLoader(shuffle=True));
++                # the resulting dataset is infinite and passes through MixtureDataset un-recycled.
++                return ds.reshuffle_each_epoch(k, perm_type=perm_type)
+             if isinstance(shuffle_cfg, BlockShuffleConfig):
+                 ds = ds.block_shuffle(
+                     io_block_size=shuffle_cfg.io_block_size,
+@@ -785,7 +795,7 @@ class LmDataConfig:
+                 ds = ds.shuffle(k, perm_type=perm_type)
+             return ds
+ 
+-        if shuffle_cfg:
++        if shuffle_cfg or self.epoch_reshuffle:
+             key_iter = key_iterator(key)
+             datasets = {name: shuffle_ds(ds, next(key_iter)) for name, ds in datasets.items()}
+ 
+diff --git a/lib/levanter/tests/test_newdataset.py b/lib/levanter/tests/test_newdataset.py
+index c3a586f12..904638d12 100644
+--- a/lib/levanter/tests/test_newdataset.py
++++ b/lib/levanter/tests/test_newdataset.py
+@@ -5,7 +5,37 @@ import jax.random
+ import pytest
+ 
+ from levanter.data import BlockShufflingDataset, PermutationDataset
+-from levanter.data.dataset import ListAsyncDataset
++from levanter.data.dataset import EpochReshufflingDataset, ListAsyncDataset
++
++
++@pytest.mark.asyncio
++async def test_epoch_reshuffling_dataset_reshuffles_each_epoch():
++    n = 16
++    data = list(range(n))
++    base = ListAsyncDataset(data)
++    ds = EpochReshufflingDataset(base, jax.random.PRNGKey(0))
++
++    assert not ds.is_finite()
++    # Pull three consecutive epochs from the infinite stream.
++    epochs = [await ds.get_batch(list(range(e * n, (e + 1) * n))) for e in range(3)]
++
++    # Each epoch is a full permutation of the base (every element exactly once).
++    for ep in epochs:
++        assert sorted(ep) == data
++    # Epochs use *different* permutations (per-epoch reshuffle, not a recycled single order).
++    assert epochs[0] != epochs[1]
++    assert epochs[1] != epochs[2]
++    assert epochs[0] != epochs[2]
++
++
++@pytest.mark.asyncio
++async def test_epoch_reshuffling_dataset_is_deterministic():
++    data = list(range(16))
++    ds1 = EpochReshufflingDataset(ListAsyncDataset(list(data)), jax.random.PRNGKey(0))
++    ds2 = EpochReshufflingDataset(ListAsyncDataset(list(data)), jax.random.PRNGKey(0))
++    b1 = await ds1.get_batch(list(range(40)))
++    b2 = await ds2.get_batch(list(range(40)))
++    assert b1 == b2
+ 
+ 
+ @pytest.mark.asyncio

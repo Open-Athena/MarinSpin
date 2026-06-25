@@ -1,0 +1,20 @@
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+.uv/
+uv.lock
+
+# large runtime artifacts (not migrated — see ISSUES.md #8)
+scratch/
+ckpt/
+*.h5
+*.npz
+
+# latex build artifacts
+poster/*.aux
+poster/*.log
+poster/*.nav
+poster/*.out
+poster/*.snm
+poster/*.toc

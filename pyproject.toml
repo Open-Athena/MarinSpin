@@ -1,0 +1,37 @@
+[project]
+name = "marin-spin"
+version = "0.1.0"
+description = "Can a transformer learn 2D-Ising kinetic Monte-Carlo coarsening dynamics? Built on Marin."
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    # --- Marin consumed as a library (see ISSUES.md for the packaging gaps) ---
+    "marin-levanter",   # JAX training lib; ALSO provides levanter.grug.{sharding,loss,attention}
+    "marin-haliax",     # named-axis arrays (haliax.partitioning)
+    "marin-core",       # marin.execution.*, marin.processing.tokenize, marin.training.training
+    "marin-fray",       # fray.cluster / fray.types job dispatch
+    # --- third-party (most come transitively via levanter) ---
+    "numpy",
+    "scipy",
+    "matplotlib",
+    "h5py",
+    "equinox",
+    "jax",
+]
+
+# NOTE: the marin packages are NOT published to PyPI; they are uv-workspace members of
+# github.com/marin-community/marin. They are pinned below via git subdirectory installs.
+# BLOCKER: marin-levanter `main` does NOT yet contain the `epoch_reshuffle` feature this
+# project requires (see ISSUES.md #1). Until it is upstreamed, point marin-levanter at a
+# branch/fork that has it.
+[tool.uv.sources]
+marin-levanter = { git = "https://github.com/marin-community/marin", subdirectory = "lib/levanter", rev = "73bee3a9dcd4ed49ada05de07e05dc147be905b9" }
+marin-haliax   = { git = "https://github.com/marin-community/marin", subdirectory = "lib/haliax", rev = "73bee3a9dcd4ed49ada05de07e05dc147be905b9" }
+marin-core     = { git = "https://github.com/marin-community/marin", subdirectory = "lib/marin", rev = "73bee3a9dcd4ed49ada05de07e05dc147be905b9" }
+marin-fray     = { git = "https://github.com/marin-community/marin", subdirectory = "lib/fray", rev = "73bee3a9dcd4ed49ada05de07e05dc147be905b9" }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/marin_spin"]
