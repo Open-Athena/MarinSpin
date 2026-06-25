@@ -28,6 +28,7 @@ src/marin_spin/        importable package (the Ising-specific work)
                        levanter.grug library — see ISSUES #2/#3)
 analysis/              plotting / eval scripts (poster figures); run from this dir
 poster/                conference poster (poster.tex + figures/, 36x48")
+slides/                talk decks pulled from Open-Athena/ising-ntp (motivation_slides + talk)
 docs/                  levanter-epoch-reshuffle.patch (the un-upstreamed feature)
 .claude/skills/        babysit-job, debug, scan-logs, commit, ... (paths need adapting, ISSUES #7)
 ```
