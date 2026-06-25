@@ -67,13 +67,15 @@ Not library — experiment/monorepo code MarinSpin is built on (the hard part):
   home (`marin.training`?), and make the dataset mixture a parameter rather than a module-level
   import; or (b) prune them from the grug launch path so it doesn't hard-import pretraining infra.
 
-### 5. Marin packages are not published / not pinnable  ⚠️
-- **What:** `marin-core`, `marin-levanter`, `marin-haliax`, `marin-fray` are uv-**workspace**
-  members (`workspace = true`), not on PyPI. This repo installs them via git-subdirectory pins.
-- **Why it complicates:** no semver, no released artifact; git pins are brittle and the
-  `tpu`/`gpu` JAX extras story (`marin-levanter[tpu]` etc.) needs to be reproduced downstream.
-- **Recommendation:** publish (even to a private index) or document a supported "install Marin as a
-  library" path including the accelerator extras.
+### 5. Marin packages are published, but only as a nightly dev channel  ✅/ℹ️
+- **Resolved:** `marin-core`, `marin-levanter`, `marin-haliax`, `marin-fray` **are on PyPI**
+  (and GitHub Packages, github.com/orgs/marin-community/packages). Latest at migration time:
+  `0.2.27.dev202606250842`. `pyproject.toml` now pins these from PyPI (no git pins).
+- **Remaining nuance:** they are **dev/nightly** builds (no stable semver), so downstream pins are
+  to dated dev versions; `[tool.uv] prerelease = "allow"` is required. The `tpu`/`gpu` JAX extras
+  story (`marin-levanter[tpu]`) should be documented for library consumers.
+- **Recommendation:** publish periodic **stable** releases and document the accelerator-extras
+  install path.
 
 ### 6. `levanter.grug` is already a partial library — good, finish it  ✅/⚠️
 - `levanter.grug.{sharding,loss,attention,_moe,grug_moe}` already ship in the levanter package.

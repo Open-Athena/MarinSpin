@@ -32,8 +32,8 @@ mk "grug launch hard-imports pretraining infra (\`experiments.defaults\`, \`pret
 
 Fix: give `_submit_train_job`/`default_validation_sets` a library home and make the data mixture a parameter rather than a module-level import. See ISSUES.md #4.'
 
-mk "Publish / pin Marin packages for library consumers" "agent-generated" \
-'🤖 `marin-core`, `marin-levanter`, `marin-haliax`, `marin-fray` are uv-workspace members (not on PyPI). This repo installs them via brittle git-subdirectory pins, and the `tpu`/`gpu` JAX extras story must be reproduced downstream. Provide a published/pinnable distribution + documented accelerator-extras install. See ISSUES.md #5.'
+mk "Publish stable Marin releases (only nightly dev channel today)" "agent-generated" \
+'🤖 `marin-core`, `marin-levanter`, `marin-haliax`, `marin-fray` ARE published (PyPI + GitHub Packages) but only as nightly dev builds (e.g. `0.2.27.dev202606250842`) with no stable semver, so downstream must pin dated dev versions and set `prerelease = "allow"`. Provide periodic stable releases and document the `tpu`/`gpu` accelerator-extras install path. See ISSUES.md #5.'
 
 mk "Adapt copied .claude skills to non-monorepo paths" "agent-generated" \
 '🤖 Copied skills (`.claude/skills/babysit-job`, ...) resolve cluster configs from `lib/iris/config/*.yaml` and call `./infra/pre-commit.py` — paths that do not exist here. Adapt the cluster-config resolution and lint entrypoint for a library consumer, or expose them via a Marin CLI/tool. See ISSUES.md #7.'
