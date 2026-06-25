@@ -91,6 +91,9 @@ Not library — experiment/monorepo code MarinSpin is built on (the hard part):
 - Scripts hardcode paths like `scratch/ckpt/step-49400`, `scratch/data/*.npz`,
   `/Users/.../Downloads/*.h5` (KMC trajectory HDF5). These are large artifacts, intentionally not
   migrated. Re-point them (config/env) when wiring up runs.
+- **TODO:** host the KMC trajectory dataset (and possibly the trained checkpoint) on
+  **Hugging Face** (a dataset/model repo) and link to it from this repo's README, so runs are
+  reproducible without local files.
 
 ---
 
