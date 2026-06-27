@@ -1,0 +1,1 @@
+{"models": [{"id": "marinspin", "label": "MarinSpin d256", "dModel": 256, "nLayers": 6, "nCheckpoints": 1}], "default": "marinspin"}
